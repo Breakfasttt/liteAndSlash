@@ -1,0 +1,50 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id         String      @id @default(uuid())
+  pseudo     String      @unique // Format: Pseudo#12345
+  email      String?     @unique
+  createdAt  DateTime    @default(now())
+  characters Character[]
+}
+
+model Character {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String   // Nom du personnage
+  classShape String   // CIRCLE, SQUARE, TRIANGLE
+  level      Int      @default(1)
+  xp         Int      @default(0)
+  materials  Int      @default(0) // Matériaux de craft accumulés
+  weapons    String   // Configurations JSON des arbres de compétences d'armes
+  items      Item[]
+}
+
+model Item {
+  id          String    @id @default(uuid())
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  slot        String    // CASQUE, TORSE, JAMBES, GANTS, BAGUE, COLLIER, ARME1, ARME2
+  rarity      String    // WHITE, GREEN, BLUE, PURPLE, UNIQUE
+  gearset     String?   // Famille d'item (Set)
+  statsJSON   String    // Lignes de statistiques sérialisées en JSON
+  isEquipped  Boolean   @default(false)
+}
+
+model Leaderboard {
+  id             String   @id @default(uuid())
+  bossId         String
+  difficulty     String   // NORMAL, DIFFICULT, NIGHTMARE
+  playerCount    Int
+  completionTime Float    // Temps de complétion en secondes
+  playerNames    String   // Pseudos concaténés par virgules
+  achievedAt     DateTime @default(now())
+}

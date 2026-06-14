@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>liteAndSlash - Vampire Survivors x Hack'n'Slash</title>
+  <!-- Google Fonts: Outfit -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-CEaklQ_6.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CNquUhCk.css">
+</head>
+<body>
+  <!-- ==========================================
+       1. LANDING PAGE / AUTHENTICATION
+       ========================================== -->
+  <div id="landing-page" class="view active">
+    <div class="glow-orb red"></div>
+    <div class="glow-orb blue"></div>
+    <div class="landing-card">
+      <div class="logo">
+        <span class="shape-circle"></span>
+        <span class="shape-square"></span>
+        <span class="shape-triangle"></span>
+        <h1>lite<span class="neon-text">And</span>Slash</h1>
+      </div>
+      <p class="tagline">Auto-bullet heaven & Procedural loot hack'n'slash. Minimalist geometry, maximalist theorycrafting.</p>
+      
+      <div class="auth-section">
+        <div class="guest-box">
+          <input type="text" id="guest-pseudo" placeholder="Entrez un pseudo..." maxlength="12">
+          <button id="btn-play-guest" class="btn primary">Jouer en Invité</button>
+        </div>
+        <div class="separator">OU</div>
+        <div class="social-login">
+          <button id="btn-login-discord" class="btn discord">Se connecter avec Discord</button>
+          <button id="btn-login-google" class="btn google">Se connecter avec Google</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       2. SELECTION / CREATION DE PERSONNAGE
+       ========================================== -->
+  <div id="character-page" class="view">
+    <div class="character-container">
+      <div class="header-bar">
+        <h2>Vos Personnages <span id="char-count">(0/5)</span></h2>
+        <button id="btn-logout" class="btn secondary sm">Déconnexion</button>
+      </div>
+
+      <div class="character-selection-area">
+        <!-- Liste des persos -->
+        <div class="char-list" id="char-list">
+          <!-- Injecté dynamiquement -->
+        </div>
+
+        <!-- Formulaire de création (modal/panneau droit) -->
+        <div class="char-creator hidden" id="char-creator">
+          <h3>Créer un Personnage</h3>
+          <input type="text" id="new-char-name" placeholder="Nom du héro..." maxlength="16">
+          
+          <div class="class-selector">
+            <label>Forme de base (Classe) :</label>
+            <div class="class-options">
+              <div class="class-opt active" data-shape="CIRCLE">
+                <div class="shape circle-preview"></div>
+                <h4>Cercle</h4>
+                <p>Mobilité & Esquive</p>
+              </div>
+              <div class="class-opt" data-shape="SQUARE">
+                <div class="shape square-preview"></div>
+                <h4>Carré</h4>
+                <p>Survie & Dégâts physiques</p>
+              </div>
+              <div class="class-opt" data-shape="TRIANGLE">
+                <div class="shape triangle-preview"></div>
+                <h4>Triangle</h4>
+                <p>Dégâts magiques & Mana</p>
+              </div>
+            </div>
+          </div>
+
+          <button id="btn-create-char" class="btn primary">Créer & Lancer</button>
+          <button id="btn-cancel-create" class="btn secondary">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       3. HUB CENTRAL / LOBBY (ONGLETS)
+       ========================================== -->
+  <div id="hub-page" class="view">
+    <div class="hub-container">
+      <!-- Barre d'onglets du haut -->
+      <nav class="hub-tabs">
+        <div class="user-identity" id="user-identity-text">Compte#00000</div>
+        <button class="tab-btn active" data-tab="tab-play">Jouer</button>
+        <button class="tab-btn" data-tab="tab-inventory">Inventaire</button>
+        <button class="tab-btn" data-tab="tab-skills">Talents & Armes</button>
+        <button class="tab-btn" data-tab="tab-social">Social</button>
+        <button id="btn-hub-back" class="btn secondary sm">Changer Perso</button>
+      </nav>
+
+      <!-- Contenu des onglets -->
+      <div class="tab-content active" id="tab-play">
+        <div class="play-grid">
+          <!-- Sélection du boss -->
+          <div class="boss-panel card">
+            <h3>Boss à Chasser</h3>
+            <div class="boss-list">
+              <div class="boss-opt active" data-boss="boss_hyper_octogone">
+                <div class="boss-avatar">⎔</div>
+                <div class="boss-details">
+                  <h4>L'Hyper-Octogone</h4>
+                  <p>Difficulté : Standard</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="difficulty-selector">
+              <label>Difficulté de l'Instance :</label>
+              <div class="diff-options">
+                <button class="diff-btn active" data-diff="NORMAL">Normal</button>
+                <button class="diff-btn" data-diff="DIFFICULT">Difficile</button>
+                <button class="diff-btn" data-diff="NIGHTMARE">Cauchemar</button>
+              </div>
+            </div>
+
+            <div class="action-buttons">
+              <button id="btn-launch-solo" class="btn primary">Lancer Solo</button>
+              <button id="btn-join-matchmaking" class="btn primary pulse">Matchmaking Public</button>
+            </div>
+          </div>
+
+          <!-- Leaderboard local -->
+          <div class="leaderboard-panel card">
+            <h3>Leaderboard de Rapidité</h3>
+            <div class="leaderboard-list" id="leaderboard-list">
+              <!-- Injecté dynamiquement -->
+              <p class="empty-text">Aucun record pour le moment.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-inventory">
+        <div class="inventory-grid">
+          <!-- Fiche de stats & Équipements -->
+          <div class="character-sheet card">
+            <h3 id="char-name-stats">Héros (Niv. 1)</h3>
+            <div class="equipped-slots">
+              <div class="slot" data-slot="CASQUE">Casque</div>
+              <div class="slot" data-slot="TORSE">Torse</div>
+              <div class="slot" data-slot="JAMBES">Jambes</div>
+              <div class="slot" data-slot="GANTS">Gants</div>
+              <div class="slot" data-slot="BAGUE">Bague</div>
+              <div class="slot" data-slot="COLLIER">Collier</div>
+              <div class="slot" data-slot="ARME1">Arme 1</div>
+              <div class="slot" data-slot="ARME2">Arme 2</div>
+            </div>
+            <div class="stat-list-display" id="stat-list-display">
+              <!-- Stats calculées dynamiquement -->
+            </div>
+          </div>
+
+          <!-- Grille d'inventaire & Forge -->
+          <div class="bag-and-forge card">
+            <div class="forge-header">
+              <h3>Sacoche & Forge</h3>
+              <div class="mats-counter">Matériaux : <span id="materials-count" class="neon-text">0</span></div>
+            </div>
+
+            <div class="bag-grid" id="bag-grid">
+              <!-- Grille d'objets -->
+            </div>
+
+            <!-- Panel Forge d'Actions -->
+            <div class="forge-actions-panel">
+              <h4>Atelier d'Artisanat</h4>
+              <div class="forge-buttons">
+                <button id="btn-forge-add-line" class="btn primary sm">Ajouter Stat (+15 Mat.)</button>
+                <button id="btn-forge-salvage" class="btn danger sm">Démanteler (+10 Mat.)</button>
+                <button id="btn-forge-fusion" class="btn primary sm">Fusionner 3 objets</button>
+              </div>
+              <p class="forge-info-text">Sélectionnez des objets dans votre sac pour interagir.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-skills">
+        <div class="skills-grid card">
+          <h3>Arbres de Compétences & Talents</h3>
+          <p class="tagline">Dépensez vos points de talent gagnés à chaque niveau.</p>
+          <div class="skills-selection-tree">
+            <!-- Arbre de talents de classe -->
+            <div class="class-talents-section">
+              <h4>Talents de Classe (<span id="talent-points-count">0</span> pts libres)</h4>
+              <div class="talents-nodes-grid" id="talents-nodes-grid">
+                <!-- Talents injectés -->
+              </div>
+            </div>
+            
+            <!-- Compétences d'armes -->
+            <div class="weapon-skills-section">
+              <h4>Arbre d'Armes</h4>
+              <p class="forge-info-text">Les compétences de vos armes s'activent et s'améliorent selon l'arme équipée dans vos slots Arme 1 et Arme 2.</p>
+              <div class="weapons-slots-display">
+                <div class="weapon-slot-tree-card">
+                  <h5>Slot 1 : <span id="w1-tree-name">Épée</span></h5>
+                  <div class="weapon-node active">Auto-attack de Base</div>
+                  <div class="weapon-node active">Ultime Whirlwind</div>
+                </div>
+                <div class="weapon-slot-tree-card">
+                  <h5>Slot 2 : <span id="w2-tree-name">Aucune</span></h5>
+                  <div class="weapon-node">Non équipé</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-social">
+        <div class="social-layout card">
+          <div class="social-left">
+            <h3>Matchmaking & Groupe</h3>
+            <div class="party-status-box" id="party-status-box">
+              <p>Vous n'êtes pas dans un groupe.</p>
+            </div>
+            
+            <div class="invite-form">
+              <input type="text" id="invite-pseudo" placeholder="Pseudo#XXXXX...">
+              <button id="btn-invite-party" class="btn primary sm">Inviter au Groupe</button>
+            </div>
+          </div>
+
+          <div class="social-right">
+            <h3>Joueurs Connectés</h3>
+            <div class="online-list" id="online-players-list">
+              <!-- Liste joueurs -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Le Chat MMO (Persistant en bas du Hub) -->
+      <footer class="mmo-chat">
+        <div class="chat-messages" id="chat-messages">
+          <div class="msg system"><span>[Système]</span> Bienvenue sur liteAndSlash !</div>
+        </div>
+        <div class="chat-input-row">
+          <select id="chat-channel-select">
+            <option value="Général">Général</option>
+            <option value="Groupe">Groupe</option>
+            <option value="Murmure">Murmure</option>
+          </select>
+          <input type="text" id="chat-input" placeholder="Écrire un message (Entrée pour envoyer)...">
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       4. RUN ACTIVE / GAMEPLAY VIEW
+       ========================================== -->
+  <div id="game-page" class="view">
+    <!-- Le canvas PixiJS sera injecté ici -->
+    <div class="game-hud">
+      <!-- Barre de vie & mana joueur local -->
+      <div class="hud-left">
+        <div class="hud-row">
+          <span class="hud-label">HP</span>
+          <div class="bar-container hp">
+            <div class="bar-fill hp" id="hud-hp-fill" style="width: 100%"></div>
+            <span class="bar-text" id="hud-hp-text">100 / 100</span>
+          </div>
+        </div>
+        <div class="hud-row">
+          <span class="hud-label">MANA</span>
+          <div class="bar-container mana">
+            <div class="bar-fill mana" id="hud-mana-fill" style="width: 100%"></div>
+            <span class="bar-text" id="hud-mana-text">80 / 80</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- États globaux de la run -->
+      <div class="hud-center">
+        <div class="hud-room-name" id="hud-room-name">Campement Sécurisé</div>
+        <div class="hud-keys" id="hud-keys-collected">Clés : 0 / 2</div>
+      </div>
+
+      <!-- Skill Bar / Cooldowns visualisés -->
+      <div class="hud-right">
+        <div class="hud-skill active" id="skill-dash">
+          <div class="key-bind">Shift</div>
+          <div class="skill-name">Dash</div>
+          <div class="cooldown-overlay" id="cooldown-dash" style="height: 0%"></div>
+        </div>
+        <div class="hud-skill active" id="skill-ult1">
+          <div class="key-bind">1</div>
+          <div class="skill-name" id="hud-ult1-name">Ult 1</div>
+        </div>
+        <div class="hud-skill active" id="skill-ult2">
+          <div class="key-bind">2</div>
+          <div class="skill-name" id="hud-ult2-name">Ult 2</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       5. ÉCRAN RECAPITULATIF (FIN DE RUN)
+       ========================================== -->
+  <div id="recap-page" class="view">
+    <div class="recap-card">
+      <h2 id="recap-result-title">VICTOIRE !</h2>
+      <p class="recap-stats">Durée de la run : <span id="recap-duration" class="neon-text">0.00</span> secondes.</p>
+
+      <div class="recap-loot-section">
+        <h3>Butin récolté</h3>
+        <div class="recap-loot-grid" id="recap-loot-grid">
+          <!-- Objets lootes -->
+        </div>
+      </div>
+
+      <button id="btn-recap-close" class="btn primary">Retour au Hub</button>
+    </div>
+  </div>
+
+  <!-- Modals & Notifications d'invitations -->
+  <div id="party-invite-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="party-invite-text">Invitation reçue de Joueur</h3>
+      <div class="modal-buttons">
+        <button id="btn-accept-invite" class="btn primary sm">Accepter</button>
+        <button id="btn-decline-invite" class="btn secondary sm">Décliner</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Script d'initialisation -->
+</body>
+</html>

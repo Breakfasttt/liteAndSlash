@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Démarrer Serveur",
+      "type": "shell",
+      "command": "npm run server",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "liteAndSlash"
+      }
+    },
+    {
+      "label": "Démarrer Client",
+      "type": "shell",
+      "command": "npm run dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "liteAndSlash"
+      }
+    },
+    {
+      "label": "Lancer le Jeu (Client + Serveur)",
+      "dependsOn": [
+        "Démarrer Serveur",
+        "Démarrer Client"
+      ],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}
