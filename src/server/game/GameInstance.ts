@@ -1,4 +1,5 @@
 import { WebSocket } from "ws";
+import * as fs from "fs";
 import { SharedPlayer } from "../../shared/core/Player";
 import { Salle, Ennemi, RoomType, Item, WeaponType, Entity } from "../../shared/core/BaseClasses";
 import { GameRegistry } from "../../shared/core/GameRegistry";
@@ -358,8 +359,9 @@ export class GameInstance {
     // 5. Gérer les zones à effets AoE
     this.updateAOE(dt);
 
-    // 6. Tirs auto des joueurs
+    // 6. Ticks d'auto-attaques et auras passives des joueurs
     this.updatePlayerAttacks(dt);
+    this.updatePlayerAuras(dt);
 
     // 7. Envoyer la snapshot binaire/JSON à tous les joueurs connectés
     this.broadcastSnapshot();
@@ -393,17 +395,7 @@ export class GameInstance {
               height: obs.height!
             };
             if (checkCircleAABBCollision(entity, rect)) {
-              const closestX = Math.max(rect.x, Math.min(entity.x, rect.x + rect.width));
-              const closestY = Math.max(rect.y, Math.min(entity.y, rect.y + rect.height));
-              const dx = entity.x - closestX;
-              const dy = entity.y - closestY;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              if (dist > 0) {
-                entity.x = closestX + (dx / dist) * entity.radius;
-                entity.y = closestY + (dy / dist) * entity.radius;
-              } else {
-                entity.y = rect.y - entity.radius;
-              }
+              this.resolveCircleAABBCollision(entity, rect);
             }
           }
         }
@@ -414,42 +406,32 @@ export class GameInstance {
     for (const door of this.doors) {
       if (door.locked) {
         if (checkCircleAABBCollision(entity, door)) {
-          const closestX = Math.max(door.x, Math.min(entity.x, door.x + door.width));
-          const closestY = Math.max(door.y, Math.min(entity.y, door.y + door.height));
-          const dx = entity.x - closestX;
-          const dy = entity.y - closestY;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist > 0) {
-            entity.x = closestX + (dx / dist) * entity.radius;
-            entity.y = closestY + (dy / dist) * entity.radius;
-          } else {
-            entity.y = door.y - entity.radius;
-          }
+          this.resolveCircleAABBCollision(entity, door);
         }
       }
     }
 
-    // 3. Collision avec les murs latéraux des couloirs
+    // 3. Collision avec les murs latéraux des couloirs (épaisseur 100 pour empêcher le passage)
     for (const corr of this.corridors) {
       if (corr.direction === "N" || corr.direction === "S") {
         // Couloir vertical : murs à gauche (corr.x) et à droite (corr.x + corr.width)
-        const leftWall = { x: corr.x - 10, y: corr.y, width: 10, height: corr.height };
+        const leftWall = { x: corr.x - 100, y: corr.y, width: 100, height: corr.height };
         if (checkCircleAABBCollision(entity, leftWall)) {
-          entity.x = corr.x + entity.radius;
+          this.resolveCircleAABBCollision(entity, leftWall);
         }
-        const rightWall = { x: corr.x + corr.width, y: corr.y, width: 10, height: corr.height };
+        const rightWall = { x: corr.x + corr.width, y: corr.y, width: 100, height: corr.height };
         if (checkCircleAABBCollision(entity, rightWall)) {
-          entity.x = corr.x + corr.width - entity.radius;
+          this.resolveCircleAABBCollision(entity, rightWall);
         }
       } else {
         // Couloir horizontal : murs en haut (corr.y) et en bas (corr.y + corr.height)
-        const topWall = { x: corr.x, y: corr.y - 10, width: corr.width, height: 10 };
+        const topWall = { x: corr.x, y: corr.y - 100, width: corr.width, height: 100 };
         if (checkCircleAABBCollision(entity, topWall)) {
-          entity.y = corr.y + entity.radius;
+          this.resolveCircleAABBCollision(entity, topWall);
         }
-        const bottomWall = { x: corr.x, y: corr.y + corr.height, width: corr.width, height: 10 };
+        const bottomWall = { x: corr.x, y: corr.y + corr.height, width: corr.width, height: 100 };
         if (checkCircleAABBCollision(entity, bottomWall)) {
-          entity.y = corr.y + corr.height - entity.radius;
+          this.resolveCircleAABBCollision(entity, bottomWall);
         }
       }
     }
@@ -457,8 +439,15 @@ export class GameInstance {
     // 4. Collision avec les bords extérieurs de la salle
     let insideCorridor = false;
     for (const corr of this.corridors) {
-      if (entity.x >= corr.x && entity.x <= corr.x + corr.width &&
-          entity.y >= corr.y && entity.y <= corr.y + corr.height) {
+      let marginX = 0;
+      let marginY = 0;
+      if (corr.direction === "N" || corr.direction === "S") {
+        marginY = 20; // marge verticale pour permettre d'entrer dans le couloir
+      } else {
+        marginX = 20; // marge horizontale
+      }
+      if (entity.x >= corr.x - marginX && entity.x <= corr.x + corr.width + marginX &&
+          entity.y >= corr.y - marginY && entity.y <= corr.y + corr.height + marginY) {
         insideCorridor = true;
         break;
       }
@@ -497,80 +486,119 @@ export class GameInstance {
     }
   }
 
+  private resolveCircleAABBCollision(circle: { x: number; y: number; radius: number }, rect: AABB) {
+    const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.width));
+    const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.height));
+
+    const dx = circle.x - closestX;
+    const dy = circle.y - closestY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > 0) {
+      circle.x = closestX + (dx / dist) * circle.radius;
+      circle.y = closestY + (dy / dist) * circle.radius;
+    } else {
+      // Le centre est à l'intérieur : on le pousse vers le bord le plus proche
+      const leftDist = circle.x - rect.x;
+      const rightDist = (rect.x + rect.width) - circle.x;
+      const topDist = circle.y - rect.y;
+      const bottomDist = (rect.y + rect.height) - circle.y;
+
+      const minDist = Math.min(leftDist, rightDist, topDist, bottomDist);
+      if (minDist === leftDist) {
+        circle.x = rect.x - circle.radius;
+      } else if (minDist === rightDist) {
+        circle.x = rect.x + rect.width + circle.radius;
+      } else if (minDist === topDist) {
+        circle.y = rect.y - circle.radius;
+      } else {
+        circle.y = rect.y + rect.height + circle.radius;
+      }
+    }
+  }
+
   private updatePlayersMovement(dt: number) {
     for (const p of this.players.values()) {
       if (p.isKO || p.client.isDead) continue;
 
-      if (p.dashCooldown > 0) p.dashCooldown -= dt;
+      const inputDt = 0.01667; // 60Hz step matching client
 
       while (p.inputQueue.length > 0) {
         const input = p.inputQueue.shift()!;
         p.lastInputSeq = input.sequenceNumber;
 
+        // 1. Décrémenter les timers de dash pour cet input step
+        if (p.dashCooldown > 0) {
+          p.dashCooldown -= inputDt;
+          if (p.dashCooldown < 0) p.dashCooldown = 0;
+        }
+
+        const wasDashing = p.dashDuration > 0;
+        if (p.dashDuration > 0) {
+          p.dashDuration -= inputDt;
+          if (p.dashDuration < 0) p.dashDuration = 0;
+        }
+
+        // Si le dash vient de se terminer, on remet la vitesse à 0
+        if (wasDashing && p.dashDuration === 0) {
+          p.client.vx = 0;
+          p.client.vy = 0;
+        }
+
+        // 2. Traiter le déclenchement du dash
         if (input.keys.dash && p.dashCooldown <= 0 && p.dashDuration <= 0) {
           p.dashDuration = 0.25;
           p.dashCooldown = 1.5 - (p.client.getStat(Stat.COOLDOWN_RECOVERY) || 0);
           
-          let dx = 0;
-          let dy = 0;
-          if (input.keys.up) dy = -1;
-          if (input.keys.down) dy = 1;
-          if (input.keys.left) dx = -1;
-          if (input.keys.right) dx = 1;
-
-          if (dx === 0 && dy === 0) {
-            dx = Math.cos(input.mouseAngle);
-            dy = Math.sin(input.mouseAngle);
-          } else {
-            const len = Math.sqrt(dx * dx + dy * dy);
-            dx /= len;
-            dy /= len;
-          }
+          let dx = Math.cos(input.mouseAngle);
+          let dy = Math.sin(input.mouseAngle);
 
           p.dashDirectionX = dx;
           p.dashDirectionY = dy;
         }
 
+        // 3. Déclencher l'ultime
         if (input.keys.ult1) {
           this.castUltimate(p, "ARME1");
         }
-        if (input.keys.ult2) {
-          this.castUltimate(p, "ARME2");
-        }
 
-        if (p.dashDuration <= 0) {
+        // 4. Calculer la vitesse pour cet input step
+        if (p.dashDuration > 0) {
+          const dashSpeed = p.client.getStat(Stat.MOVEMENT_SPEED) * 2.5;
+          p.client.vx = p.dashDirectionX * dashSpeed;
+          p.client.vy = p.dashDirectionY * dashSpeed;
+        } else {
           let dx = 0;
           let dy = 0;
-          if (input.keys.up) dy = -1;
-          if (input.keys.down) dy = 1;
-          if (input.keys.left) dx = -1;
-          if (input.keys.right) dx = 1;
-
-          if (dx !== 0 && dy !== 0) {
-            const len = Math.sqrt(dx * dx + dy * dy);
-            dx /= len;
-            dy /= len;
+          if (input.moving) {
+            dx = Math.cos(input.mouseAngle);
+            dy = Math.sin(input.mouseAngle);
           }
+          try {
+            fs.appendFileSync("debug.log", `[Server Input] seq=${input.sequenceNumber} moving=${input.moving} dx=${dx} dy=${dy} mouseAngle=${input.mouseAngle}\n`);
+          } catch(e) {}
+          console.log(`[Server Input] seq=${input.sequenceNumber} moving=${input.moving} dx=${dx} dy=${dy} mouseAngle=${input.mouseAngle}`);
 
           const speed = p.client.getStat(Stat.MOVEMENT_SPEED);
           p.client.vx = dx * speed;
           p.client.vy = dy * speed;
         }
+
+        // 5. Déplacer le joueur et résoudre les collisions pour cet input step
+        if (p.dashDuration > 0) {
+          const subSteps = 4;
+          const subDt = inputDt / subSteps;
+          for (let step = 0; step < subSteps; step++) {
+            p.client.x += p.client.vx * subDt;
+            p.client.y += p.client.vy * subDt;
+            this.resolveCollisionsForEntity(p.client, true);
+          }
+        } else {
+          p.client.x += p.client.vx * inputDt;
+          p.client.y += p.client.vy * inputDt;
+          this.resolveCollisionsForEntity(p.client, false);
+        }
       }
-
-      if (p.dashDuration > 0) {
-        p.dashDuration -= dt;
-        const dashSpeed = p.client.getStat(Stat.MOVEMENT_SPEED) * 2.5;
-        p.client.vx = p.dashDirectionX * dashSpeed;
-        p.client.vy = p.dashDirectionY * dashSpeed;
-      }
-
-      // Appliquer déplacement temporaire
-      p.client.x += p.client.vx * dt;
-      p.client.y += p.client.vy * dt;
-
-      // Résoudre les collisions contre les murs/obstacles
-      this.resolveCollisionsForEntity(p.client, p.dashDuration > 0);
 
       // Gérer la transition de salle
       this.checkRoomTransition(p);
@@ -724,10 +752,8 @@ export class GameInstance {
         const item = p.client.equipment.get(slot);
         if (!item) continue;
 
-        // Récupérer la définition de l'arme
-        const arme = GameRegistry.createArme(item.slot === "ARME1" ? "SWORD" : "DAGGER"); // Mappe par type d'arme
-        // On simule avec des armes simplifiées
-        const weaponType = slot === "ARME1" ? "SWORD" : "DAGGER";
+        // Récupérer le type d'arme dynamique depuis gearset
+        const weaponType = item.gearset || (slot === "ARME1" ? "SWORD" : "DAGGER");
         const wInstance = GameRegistry.createArme(weaponType);
 
         // Timer de recharge
@@ -759,13 +785,30 @@ export class GameInstance {
   }
 
   private castUltimate(p: any, slot: string) {
+    if (slot !== "ARME1") return; // L'ultime n'est lançable que par l'Arme 1
     const item = p.client.equipment.get(slot);
     if (!item) return;
     
-    // Simuler le cast
-    const wInstance = GameRegistry.createArme(slot === "ARME1" ? "SWORD" : "DAGGER");
+    // Charger le type d'arme dynamique depuis gearset
+    const weaponType = item.gearset || "SWORD";
+    const wInstance = GameRegistry.createArme(weaponType);
     // Exécuter
     wInstance.ultimateNode.execute(this, p.client);
+  }
+
+  private updatePlayerAuras(dt: number) {
+    for (const p of this.players.values()) {
+      if (p.isKO || p.client.isDead) continue;
+
+      const weapon2 = p.client.equipment.get("ARME2");
+      if (weapon2 && weapon2.isEquipped) {
+        const weaponType = weapon2.gearset || "DAGGER";
+        if (weaponType === "MACE") {
+          // Régénération passive de 5 PV/s pour la Masse en slot 2
+          p.client.heal(5 * dt);
+        }
+      }
+    }
   }
 
   // ==========================================
@@ -1032,15 +1075,21 @@ export class GameInstance {
   }
 
   private generateRandomLoot(): GeneratedItem {
-    const slots = ["CASQUE", "TORSE", "JAMBES", "GANTS", "BAGUE", "COLLIER"];
+    const slots = ["CASQUE", "TORSE", "JAMBES", "GANTS", "BAGUE", "COLLIER", "ARME1", "ARME2"];
     const slot = slots[Math.floor(Math.random() * slots.length)];
     
     // Choix de la rareté
     const rand = Math.random();
     const rarity = rand > 0.9 ? "PURPLE" : rand > 0.7 ? "BLUE" : rand > 0.4 ? "GREEN" : "WHITE";
     
-    const sets = ["Vitesse Spectrale", "Gardien Géométrique"];
-    const gearset = Math.random() > 0.6 ? sets[Math.floor(Math.random() * sets.length)] : undefined;
+    let gearset: string | undefined;
+    if (slot === "ARME1" || slot === "ARME2") {
+      const weaponTypes = ["SWORD", "AXE", "DAGGER", "MACE"];
+      gearset = weaponTypes[Math.floor(Math.random() * weaponTypes.length)];
+    } else {
+      const sets = ["Vitesse Spectrale", "Gardien Géométrique"];
+      gearset = Math.random() > 0.6 ? sets[Math.floor(Math.random() * sets.length)] : undefined;
+    }
 
     // Générer les lignes de statistiques
     const stats: any = {};

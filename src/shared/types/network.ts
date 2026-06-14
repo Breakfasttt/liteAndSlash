@@ -50,4 +50,6 @@ export interface PlayerInput {
     ult2: boolean;
   };
   mouseAngle: number;
+  moving?: boolean;
 }
+

@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { Stat } from "../shared/core/Stats";
 let prisma = null;
 if (process.env.DATABASE_URL) {
     prisma = new PrismaClient();
@@ -50,8 +51,10 @@ export const dbService = {
             },
             ARME2: {}
         });
+        const defaultWeaponType = classShape === "CIRCLE" ? "DAGGER" : classShape === "SQUARE" ? "MACE" : "SWORD";
+        const weaponTypes = ["SWORD", "AXE", "DAGGER", "MACE"];
         if (prisma) {
-            return prisma.character.create({
+            const char = await prisma.character.create({
                 data: {
                     userId,
                     name,
@@ -60,12 +63,31 @@ export const dbService = {
                     level: 1,
                     xp: 0,
                     materials: 100 // Matériaux de départ pour tester la forge
-                },
+                }
+            });
+            // Créer les 4 armes de départ pour ce personnage
+            for (const wType of weaponTypes) {
+                await prisma.item.create({
+                    data: {
+                        characterId: char.id,
+                        slot: wType === "DAGGER" ? "ARME2" : "ARME1",
+                        rarity: "WHITE",
+                        gearset: wType,
+                        statsJSON: JSON.stringify({
+                            [Stat.PHYSICAL_DAMAGE]: { value: 5, type: "FLAT" }
+                        }),
+                        isEquipped: wType === defaultWeaponType
+                    }
+                });
+            }
+            return prisma.character.findUnique({
+                where: { id: char.id },
                 include: { items: true }
             });
         }
+        const charId = "c_" + Math.random().toString(36).substring(2, 9);
         const character = {
-            id: "c_" + Math.random().toString(36).substring(2, 9),
+            id: charId,
             userId,
             name,
             classShape,
@@ -75,6 +97,21 @@ export const dbService = {
             weapons: startingWeapons,
             items: []
         };
+        const startingItems = weaponTypes.map(wType => ({
+            id: "i_" + Math.random().toString(36).substring(2, 9),
+            characterId: charId,
+            slot: wType === "DAGGER" ? "ARME2" : "ARME1",
+            rarity: "WHITE",
+            gearset: wType,
+            statsJSON: JSON.stringify({
+                [Stat.PHYSICAL_DAMAGE]: { value: 5, type: "FLAT" }
+            }),
+            isEquipped: wType === defaultWeaponType
+        }));
+        for (const item of startingItems) {
+            memoryDb.items.set(item.id, item);
+        }
+        character.items = startingItems;
         memoryDb.characters.set(character.id, character);
         return character;
     },

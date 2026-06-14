@@ -30,15 +30,22 @@ let isVictory = false;
 // Variables pour le Netcode
 let clientSequenceNumber = 0;
 const inputBuffer: any[] = [];
-let localPlayerEntity: any = { x: 1800, y: 1800, vx: 0, vy: 0 };
+let localPlayerEntity: any = { x: 1800, y: 1800, vx: 0, vy: 0, radius: 16 };
 let localPlayerSpeed = 220;
 let localPlayerDashing = false;
+let localPlayerDashDuration = 0;
+let localPlayerDashCooldown = 0;
+let localPlayerDashDirectionX = 0;
+let localPlayerDashDirectionY = 0;
 const playersEntities = new Map<string, { graphics: Graphics; label: Text; serverX: number; serverY: number; x: number; y: number }>();
 const enemiesEntities = new Map<string, { graphics: Graphics; hpBar: Graphics; serverX: number; serverY: number; x: number; y: number }>();
 
 // Inputs du clavier
 const keys = { up: false, down: false, left: false, right: false, dash: false, ult1: false, ult2: false };
 let mouseAngle = 0;
+let lastMouseClientX = window.innerWidth / 2;
+let lastMouseClientY = window.innerHeight / 2;
+
 
 // Object Pool pour les projectiles locaux
 const projectilesPool: any[] = [];
@@ -374,7 +381,11 @@ function renderHubInventory() {
     const it = equipped.get(slot);
     if (it) {
       el.className = `slot filled border-${it.rarity}`;
-      el.innerText = `${slot} (${it.rarity})`;
+      if (slot === "ARME1" || slot === "ARME2") {
+        el.innerText = `${slot} [${it.gearset || "SWORD"}] (${it.rarity})`;
+      } else {
+        el.innerText = `${slot} (${it.rarity})`;
+      }
       el.onclick = () => unequipItem(it.id, slot);
     } else {
       el.className = "slot";
@@ -393,8 +404,11 @@ function renderHubInventory() {
     itemEl.className = `bag-item border-${it.rarity}`;
     
     // Symbole visuel selon slot
-    const symbol = it.slot === "ARME1" || it.slot === "ARME2" ? "⚔️" : "🛡️";
-    itemEl.innerText = symbol;
+    if (it.slot === "ARME1" || it.slot === "ARME2") {
+      itemEl.innerText = `⚔️ ${it.gearset || "SWORD"}`;
+    } else {
+      itemEl.innerText = "🛡️";
+    }
     
     itemEl.onclick = () => {
       // Toggle selection pour forge
@@ -410,6 +424,7 @@ function renderHubInventory() {
     // Double clic pour équiper
     itemEl.ondblclick = () => equipItem(it.id, it.slot);
     bagGrid.appendChild(itemEl);
+
   });
 
   // Stats calculées affichage
@@ -857,76 +872,304 @@ function bindGameInputs() {
   // Reset
   keys.up = keys.down = keys.left = keys.right = keys.dash = keys.ult1 = keys.ult2 = false;
 
-  window.onkeydown = (e) => {
-    const k = e.key.toLowerCase();
-    if (k === "z" || k === "w") keys.up = true;
-    if (k === "s") keys.down = true;
-    if (k === "q" || k === "a") keys.left = true;
-    if (k === "d") keys.right = true;
-    if (e.key === "Shift") keys.dash = true;
-    if (k === "1") keys.ult1 = true;
-    if (k === "2") keys.ult2 = true;
-  };
-
-  window.onkeyup = (e) => {
-    const k = e.key.toLowerCase();
-    if (k === "z" || k === "w") keys.up = false;
-    if (k === "s") keys.down = false;
-    if (k === "q" || k === "a") keys.left = false;
-    if (k === "d") keys.right = false;
-    if (e.key === "Shift") keys.dash = false;
-    if (k === "1") keys.ult1 = false;
-    if (k === "2") keys.ult2 = false;
-  };
+  window.onkeydown = null;
+  window.onkeyup = null;
 
   // Suivi de la souris
   window.onmousemove = (e) => {
-    if (!pixiApp) return;
-    const rect = pixiApp.canvas.getBoundingClientRect();
-    const centerX = pixiApp.screen.width / 2;
-    const centerY = pixiApp.screen.height / 2;
-    const x = e.clientX - rect.left - centerX;
-    const y = e.clientY - rect.top - centerY;
-    mouseAngle = Math.atan2(y, x);
+    lastMouseClientX = e.clientX;
+    lastMouseClientY = e.clientY;
   };
+
+  if (pixiApp) {
+    pixiApp.canvas.onmousedown = (e) => {
+      if (e.button === 0) {
+        keys.dash = true;
+      } else if (e.button === 2) {
+        keys.ult1 = true;
+      }
+    };
+    pixiApp.canvas.oncontextmenu = (e) => {
+      e.preventDefault();
+    };
+  }
+}
+
+function checkCircleAABBCollisionClient(circle: { x: number; y: number; radius: number }, rect: { x: number; y: number; width: number; height: number }): boolean {
+  const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.width));
+  const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.height));
+
+  const dx = circle.x - closestX;
+  const dy = circle.y - closestY;
+  const distanceSq = dx * dx + dy * dy;
+
+  return distanceSq < circle.radius * circle.radius;
+}
+
+function resolveCircleAABBCollisionClient(circle: { x: number; y: number; radius: number }, rect: { x: number; y: number; width: number; height: number }) {
+  const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.width));
+  const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.height));
+
+  const dx = circle.x - closestX;
+  const dy = circle.y - closestY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist > 0) {
+    circle.x = closestX + (dx / dist) * circle.radius;
+    circle.y = closestY + (dy / dist) * circle.radius;
+  } else {
+    const leftDist = circle.x - rect.x;
+    const rightDist = (rect.x + rect.width) - circle.x;
+    const topDist = circle.y - rect.y;
+    const bottomDist = (rect.y + rect.height) - circle.y;
+
+    const minDist = Math.min(leftDist, rightDist, topDist, bottomDist);
+    if (minDist === leftDist) {
+      circle.x = rect.x - circle.radius;
+    } else if (minDist === rightDist) {
+      circle.x = rect.x + rect.width + circle.radius;
+    } else if (minDist === topDist) {
+      circle.y = rect.y - circle.radius;
+    } else {
+      circle.y = rect.y + rect.height + circle.radius;
+    }
+  }
+}
+
+function resolveCollisionsForEntityClient(entity: { x: number; y: number; radius: number }, isDashing: boolean) {
+  if (!gameMap) return;
+
+  // 1. Obstacles de la salle active (si pas de dash)
+  if (!isDashing) {
+    const activeRoom = gameMap.rooms.find((r: any) => r.id === activeRoomId);
+    if (activeRoom && activeRoom.obstacles) {
+      for (const obs of activeRoom.obstacles) {
+        if (obs.shape === "CIRCLE") {
+          const dx = entity.x - obs.x;
+          const dy = entity.y - obs.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const minDist = entity.radius + (obs.radius || 40);
+          if (dist < minDist) {
+            if (dist > 0) {
+              entity.x = obs.x + (dx / dist) * minDist;
+              entity.y = obs.y + (dy / dist) * minDist;
+            } else {
+              entity.x += entity.radius;
+            }
+          }
+        } else {
+          const rect = {
+            x: obs.x - obs.width! / 2,
+            y: obs.y - obs.height! / 2,
+            width: obs.width!,
+            height: obs.height!
+          };
+          if (checkCircleAABBCollisionClient(entity, rect)) {
+            resolveCircleAABBCollisionClient(entity, rect);
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Portes verrouillées
+  if (gameMap.doors) {
+    for (const door of gameMap.doors) {
+      if (door.locked) {
+        if (checkCircleAABBCollisionClient(entity, door)) {
+          resolveCircleAABBCollisionClient(entity, door);
+        }
+      }
+    }
+  }
+
+  // 3. Murs latéraux des couloirs (épaisseur 100)
+  if (gameMap.corridors) {
+    for (const corr of gameMap.corridors) {
+      if (corr.direction === "N" || corr.direction === "S") {
+        const leftWall = { x: corr.x - 100, y: corr.y, width: 100, height: corr.height };
+        if (checkCircleAABBCollisionClient(entity, leftWall)) {
+          resolveCircleAABBCollisionClient(entity, leftWall);
+        }
+        const rightWall = { x: corr.x + corr.width, y: corr.y, width: 100, height: corr.height };
+        if (checkCircleAABBCollisionClient(entity, rightWall)) {
+          resolveCircleAABBCollisionClient(entity, rightWall);
+        }
+      } else {
+        const topWall = { x: corr.x, y: corr.y - 100, width: corr.width, height: 100 };
+        if (checkCircleAABBCollisionClient(entity, topWall)) {
+          resolveCircleAABBCollisionClient(entity, topWall);
+        }
+        const bottomWall = { x: corr.x, y: corr.y + corr.height, width: corr.width, height: 100 };
+        if (checkCircleAABBCollisionClient(entity, bottomWall)) {
+          resolveCircleAABBCollisionClient(entity, bottomWall);
+        }
+      }
+    }
+  }
+
+  // 4. Bords extérieurs de la salle
+  let insideCorridor = false;
+  if (gameMap.corridors) {
+    for (const corr of gameMap.corridors) {
+      let marginX = 0;
+      let marginY = 0;
+      if (corr.direction === "N" || corr.direction === "S") {
+        marginY = 20;
+      } else {
+        marginX = 20;
+      }
+      if (entity.x >= corr.x - marginX && entity.x <= corr.x + corr.width + marginX &&
+          entity.y >= corr.y - marginY && entity.y <= corr.y + corr.height + marginY) {
+        insideCorridor = true;
+        break;
+      }
+    }
+  }
+
+  if (!insideCorridor) {
+    const room = gameMap.rooms.find((r: any) => r.id === activeRoomId);
+    if (room) {
+      if (room.shape === "CIRCLE") {
+        const dx = entity.x - room.x;
+        const dy = entity.y - room.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const limit = room.radius - entity.radius;
+        if (dist > limit) {
+          if (dist > 0) {
+            entity.x = room.x + (dx / dist) * limit;
+            entity.y = room.y + (dy / dist) * limit;
+          } else {
+            entity.x = room.x;
+            entity.y = room.y;
+          }
+        }
+      } else {
+        const minX = room.x - room.width / 2 + entity.radius;
+        const maxX = room.x + room.width / 2 - entity.radius;
+        const minY = room.y - room.height / 2 + entity.radius;
+        const maxY = room.y + room.height / 2 - entity.radius;
+
+        if (entity.x < minX) entity.x = minX;
+        if (entity.x > maxX) entity.x = maxX;
+        if (entity.y < minY) entity.y = minY;
+        if (entity.y > maxY) entity.y = maxY;
+      }
+    }
+  }
+}
+
+function getLocalPlayerCooldownRecovery(): number {
+  if (!currentCharacter || !currentCharacter.items) return 0;
+  let cooldownRecovery = 0;
+  const weapon2 = currentCharacter.items.find((it: any) => it.isEquipped && it.slot === "ARME2");
+  if (weapon2 && (weapon2.gearset || "DAGGER") === "DAGGER") {
+    cooldownRecovery += 0.15;
+  }
+  return cooldownRecovery;
 }
 
 function updateClientLocal(dt: number) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  // Calculer l'angle de la souris et l'état de déplacement
+  let dx = 0;
+  let dy = 0;
+  let moving = false;
+
+  if (pixiApp) {
+    const rect = pixiApp.canvas.getBoundingClientRect();
+    const centerX = pixiApp.screen.width / 2;
+    const centerY = pixiApp.screen.height / 2;
+    const x = lastMouseClientX - rect.left - centerX;
+    const y = lastMouseClientY - rect.top - centerY;
+    const dist = Math.sqrt(x * x + y * y);
+    if (dist >= 24) {
+      mouseAngle = Math.atan2(y, x);
+      moving = true;
+      dx = Math.cos(mouseAngle);
+      dy = Math.sin(mouseAngle);
+    }
+  }
 
   // 1. Envoyer les inputs actuels au serveur (30 Hz standard, ou à chaque frame)
   clientSequenceNumber++;
   const inputPayload: PlayerInput = {
     sequenceNumber: clientSequenceNumber,
     keys: { ...keys },
-    mouseAngle
+    mouseAngle,
+    moving
   };
 
-  // Prédiction locale immédiate du joueur local
-  let dx = 0;
-  let dy = 0;
-  if (keys.up) dy = -1;
-  if (keys.down) dy = 1;
-  if (keys.left) dx = -1;
-  if (keys.right) dx = 1;
-
-  if (dx !== 0 && dy !== 0) {
-    const len = Math.sqrt(dx * dx + dy * dy);
-    dx /= len;
-    dy /= len;
+  // Mettre à jour les timers locaux de dash
+  if (localPlayerDashCooldown > 0) {
+    localPlayerDashCooldown -= dt;
+    if (localPlayerDashCooldown < 0) localPlayerDashCooldown = 0;
+  }
+  const wasDashingLocally = localPlayerDashDuration > 0;
+  if (localPlayerDashDuration > 0) {
+    localPlayerDashDuration -= dt;
+    if (localPlayerDashDuration < 0) localPlayerDashDuration = 0;
   }
 
-  // Utiliser la vitesse et l'état de dash synchronisés
-  const speed = (localPlayerSpeed || 220) * (localPlayerDashing ? 2.5 : 1.0);
-  localPlayerEntity.x += dx * speed * dt;
-  localPlayerEntity.y += dy * speed * dt;
+  // Mettre à jour l'affichage visuel du cooldown sur le HUD
+  const cooldownOverlay = document.getElementById("cooldown-dash");
+  if (cooldownOverlay) {
+    const cooldownRecovery = getLocalPlayerCooldownRecovery();
+    const maxCooldown = 1.5 - cooldownRecovery;
+    const pct = maxCooldown > 0 ? (localPlayerDashCooldown / maxCooldown) * 100 : 0;
+    cooldownOverlay.style.height = `${pct}%`;
+  }
 
-  // Stocker dans le buffer de réconciliation
+  // Si le dash vient de se terminer localement, on remet le flag dashing à false
+  if (wasDashingLocally && localPlayerDashDuration === 0) {
+    localPlayerDashing = false;
+  }
+
+  // Déclencher le dash localement si demandé et disponible
+  if (keys.dash && localPlayerDashCooldown <= 0 && localPlayerDashDuration <= 0) {
+    localPlayerDashDuration = 0.25;
+    const cooldownRecovery = getLocalPlayerCooldownRecovery();
+    localPlayerDashCooldown = 1.5 - cooldownRecovery;
+    localPlayerDashing = true;
+    
+    // Déterminer la direction de dash local (vers l'angle de souris)
+    let dashDx = dx;
+    let dashDy = dy;
+    if (dashDx === 0 && dashDy === 0) {
+      dashDx = Math.cos(mouseAngle);
+      dashDy = Math.sin(mouseAngle);
+    }
+    localPlayerDashDirectionX = dashDx;
+    localPlayerDashDirectionY = dashDy;
+  }
+
+  // Calculer la vitesse (vx, vy) locale pour cette frame
+  let vx = 0;
+  let vy = 0;
+  if (localPlayerDashDuration > 0) {
+    const dashSpeed = (localPlayerSpeed || 220) * 2.5;
+    vx = localPlayerDashDirectionX * dashSpeed;
+    vy = localPlayerDashDirectionY * dashSpeed;
+  } else {
+    vx = dx * (localPlayerSpeed || 220);
+    vy = dy * (localPlayerSpeed || 220);
+  }
+
+  // Appliquer le déplacement
+  localPlayerEntity.x += vx * dt;
+  localPlayerEntity.y += vy * dt;
+
+  // Résoudre les collisions sur le client local pour éviter les tremblements et les traversées
+  resolveCollisionsForEntityClient(localPlayerEntity, localPlayerDashDuration > 0);
+
+  // Stocker dans le buffer de réconciliation avec les vitesses et état exacts pour cette étape
   inputBuffer.push({
     seq: clientSequenceNumber,
-    dx,
-    dy,
-    dt
+    vx,
+    vy,
+    dt,
+    isDashing: localPlayerDashDuration > 0
   });
 
   // Envoyer au serveur
@@ -937,6 +1180,7 @@ function updateClientLocal(dt: number) {
 
   // Reset des déclencheurs one-shot
   keys.dash = false;
+
   keys.ult1 = false;
   keys.ult2 = false;
 
@@ -993,11 +1237,11 @@ function handleServerSnapshot(snapshot: any) {
         inputBuffer.splice(0, idx + 1);
       }
 
-      // Ré-appliquer avec la vitesse de déplacement et l'état de dash actuels
+      // Ré-appliquer les inputs non acquittés avec les vitesses et état exacts enregistrés
       inputBuffer.forEach(input => {
-        const speed = localPlayerSpeed * (localPlayerDashing ? 2.5 : 1.0);
-        localPlayerEntity.x += input.dx * speed * input.dt;
-        localPlayerEntity.y += input.dy * speed * input.dt;
+        localPlayerEntity.x += input.vx * input.dt;
+        localPlayerEntity.y += input.vy * input.dt;
+        resolveCollisionsForEntityClient(localPlayerEntity, input.isDashing);
       });
 
       // Mettre à jour l'affichage HUD
@@ -1096,6 +1340,12 @@ function handleServerSnapshot(snapshot: any) {
       const dg = doorsEntities.get(d.id);
       if (dg) {
         dg.visible = d.locked;
+      }
+      if (gameMap && gameMap.doors) {
+        const mapDoor = gameMap.doors.find((md: any) => md.id === d.id);
+        if (mapDoor) {
+          mapDoor.locked = d.locked;
+        }
       }
     });
   }
